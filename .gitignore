@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+*.xcuserdata
+DerivedData/
+
+# Dev mode local data
+.local/
+
+# whisper.cpp build artifacts (keep source, ignore compiled)
+vendor/whisper.cpp/*.o
+vendor/whisper.cpp/*.metallib
+vendor/whisper.cpp/main
+vendor/whisper.cpp/quantize
+vendor/whisper.cpp/server
+vendor/whisper.cpp/bench
+vendor/whisper.cpp/build/
+
+# Model files (large, downloaded at runtime)
+*.bin
+
+# macOS
+.DS_Store
+*.swp
+*.swo
