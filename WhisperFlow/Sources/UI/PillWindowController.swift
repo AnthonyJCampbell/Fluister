@@ -14,12 +14,22 @@ class PillWindowController {
             createPanel()
         }
 
-        // Position near cursor
+        updatePillSize()
+        panel?.orderFront(nil)
+    }
+
+    /// Recalculate pill size and position. Call when state changes.
+    func updatePillSize() {
+        guard let panel = panel else { return }
+
+        // Use wider pill for error states so the message is readable
+        let isError: Bool
+        if case .error = appState.currentState { isError = true } else { isError = false }
+        let pillWidth: CGFloat = isError ? 320 : 220
+        let pillHeight: CGFloat = isError ? 70 : 60
+
         let mouseLocation = NSEvent.mouseLocation
         let screenFrame = NSScreen.main?.frame ?? .zero
-
-        let pillWidth: CGFloat = 220
-        let pillHeight: CGFloat = 60
 
         var x = mouseLocation.x - pillWidth / 2
         var y = mouseLocation.y + 20
@@ -28,8 +38,7 @@ class PillWindowController {
         x = max(screenFrame.minX + 10, min(x, screenFrame.maxX - pillWidth - 10))
         y = max(screenFrame.minY + 10, min(y, screenFrame.maxY - pillHeight - 10))
 
-        panel?.setFrame(NSRect(x: x, y: y, width: pillWidth, height: pillHeight), display: true)
-        panel?.orderFront(nil)
+        panel.setFrame(NSRect(x: x, y: y, width: pillWidth, height: pillHeight), display: true)
     }
 
     func hidePill() {

@@ -5,6 +5,7 @@ enum TranscriptionError: Error, LocalizedError {
     case modelNotFound
     case processTimeout
     case overallTimeout
+    case processCrashed(Int32)
     case processFailed(String)
     case cancelled
 
@@ -12,8 +13,9 @@ enum TranscriptionError: Error, LocalizedError {
         switch self {
         case .whisperCliNotFound: return "whisper-cli binary not found"
         case .modelNotFound: return "Model file not found"
-        case .processTimeout: return "Transcription chunk timed out (60s)"
+        case .processTimeout: return "Chunk timed out — try the Fast model for long recordings"
         case .overallTimeout: return "Overall transcription timed out (15min)"
+        case .processCrashed(let signal): return "whisper-cli crashed (signal \(signal))"
         case .processFailed(let msg): return "Transcription failed: \(msg)"
         case .cancelled: return "Transcription cancelled"
         }
@@ -26,7 +28,7 @@ class TranscriptionEngine {
     private var currentProcess: Process?
     private var isCancelled = false
 
-    private let perChunkTimeout: TimeInterval = 60
+    private let perChunkTimeout: TimeInterval = 120
     private let overallTimeout: TimeInterval = 900 // 15 minutes
 
     init(pathManager: PathManager, logger: AppLogger?) {
@@ -197,9 +199,11 @@ class TranscriptionEngine {
             stderrReadGroup.leave()
         }
 
-        // Timeout handling
+        // Timeout handling — track whether we triggered it
+        var didTimeout = false
         let timeoutItem = DispatchWorkItem {
             if process.isRunning {
+                didTimeout = true
                 process.terminate()
             }
         }
@@ -218,18 +222,28 @@ class TranscriptionEngine {
             throw TranscriptionError.cancelled
         }
 
-        // Check for timeout or error: terminated by signal (SIGTERM from our timeout)
-        // or non-zero exit status
+        // Distinguish our timeout (SIGTERM) from a crash (SIGSEGV, SIGABRT, etc.)
         if process.terminationReason == .uncaughtSignal {
             let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
-            logger?.log("whisper-cli killed by signal, stderr: \(stderrStr)")
-            throw TranscriptionError.processTimeout
+            if didTimeout {
+                logger?.log("whisper-cli timed out after \(Int(timeout))s, stderr: \(stderrStr)")
+                throw TranscriptionError.processTimeout
+            } else {
+                let signal = process.terminationStatus
+                logger?.log("whisper-cli crashed with signal \(signal), stderr: \(stderrStr)")
+                throw TranscriptionError.processCrashed(signal)
+            }
         }
 
         if process.terminationStatus != 0 {
-            let stderrStr = String(data: stderrData, encoding: .utf8) ?? "unknown error"
-            logger?.log("whisper-cli failed (exit \(process.terminationStatus)), stderr: \(stderrStr)")
-            throw TranscriptionError.processFailed(stderrStr)
+            let fullStderr = String(data: stderrData, encoding: .utf8) ?? "unknown error"
+            logger?.log("whisper-cli failed (exit \(process.terminationStatus)), stderr: \(fullStderr)")
+            // Extract the last meaningful line for display — full stderr is too noisy for the pill
+            let shortMessage = fullStderr
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .last(where: { !$0.isEmpty }) ?? "exit code \(process.terminationStatus)"
+            throw TranscriptionError.processFailed(shortMessage)
         }
 
         let rawOutput = String(data: stdoutData, encoding: .utf8) ?? ""

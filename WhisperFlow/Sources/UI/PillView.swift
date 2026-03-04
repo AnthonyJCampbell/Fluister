@@ -92,9 +92,11 @@ struct PillView: View {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundColor(.red)
                 .font(.system(size: 16))
+                .fixedSize()
             Text(message)
                 .font(.system(size: 11))
-                .lineLimit(2)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

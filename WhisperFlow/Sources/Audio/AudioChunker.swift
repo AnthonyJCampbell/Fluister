@@ -67,7 +67,10 @@ class AudioChunker {
         return chunks
     }
 
-    /// Split a WAV file into chunks
+    /// Split a WAV file into chunks, preserving the original sample format (16-bit PCM).
+    /// The recording is already 16kHz mono Int16 WAV (converted by AudioRecorder via afconvert).
+    /// We must write chunks in the same format — AVAudioFile.processingFormat silently
+    /// converts to Float32, which crashes whisper-cli.
     static func splitWAV(url: URL, outputDirectory: URL) throws -> [ChunkInfo] {
         let inputFile: AVAudioFile
         do {
@@ -76,9 +79,29 @@ class AudioChunker {
             throw AudioChunkerError.cannotOpenFile
         }
 
-        let format = inputFile.processingFormat
-        let sampleRate = format.sampleRate
+        let fileFormat = inputFile.fileFormat
+        let sampleRate = fileFormat.sampleRate
         let totalDuration = Double(inputFile.length) / sampleRate
+
+        // processingFormat is always Float32 canonical PCM (AVAudioFile requirement).
+        // We need an explicit converter to go Float32 → Int16 so whisper-cli gets a
+        // standard 16-bit WAV. Relying on AVAudioFile.write(from:) with a mismatched
+        // buffer format produces silent format-conversion failures on some OS versions.
+        let processingFormat = inputFile.processingFormat
+
+        // Build the exact Int16 output format whisper-cli expects: 16kHz, mono, Int16 PCM.
+        guard let int16Format = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: sampleRate,
+            channels: fileFormat.channelCount,
+            interleaved: true
+        ) else {
+            throw AudioChunkerError.invalidFormat
+        }
+
+        guard let converter = AVAudioConverter(from: processingFormat, to: int16Format) else {
+            throw AudioChunkerError.invalidFormat
+        }
 
         let boundaries = calculateChunkBoundaries(totalDuration: totalDuration)
 
@@ -94,16 +117,46 @@ class AudioChunker {
             let chunkFilename = String(format: "chunk_%03d.wav", index)
             let chunkURL = outputDirectory.appendingPathComponent(chunkFilename)
 
-            // Read frames from input
+            // Seek and read into a Float32 processing buffer.
             inputFile.framePosition = startFrame
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            guard let float32Buffer = AVAudioPCMBuffer(pcmFormat: processingFormat, frameCapacity: frameCount) else {
                 throw AudioChunkerError.invalidFormat
             }
-            try inputFile.read(into: buffer, frameCount: frameCount)
+            try inputFile.read(into: float32Buffer, frameCount: frameCount)
 
-            // Write to chunk file
-            let outputFile = try AVAudioFile(forWriting: chunkURL, settings: format.settings)
-            try outputFile.write(from: buffer)
+            // Convert Float32 → Int16 explicitly so the on-disk WAV is unambiguously
+            // 16-bit PCM regardless of AVAudioFile's internal conversion behaviour.
+            guard let int16Buffer = AVAudioPCMBuffer(pcmFormat: int16Format, frameCapacity: float32Buffer.frameLength) else {
+                throw AudioChunkerError.invalidFormat
+            }
+            // Reset converter state between chunks so no residual buffering
+            // from a previous chunk bleeds into the next one.
+            converter.reset()
+            var convError: NSError?
+            let status = converter.convert(to: int16Buffer, error: &convError) { _, outStatus in
+                outStatus.pointee = .haveData
+                return float32Buffer
+            }
+            if status == .error || convError != nil {
+                throw convError ?? AudioChunkerError.invalidFormat
+            }
+
+            // Write the Int16 buffer using the matching format. AVAudioFile(forWriting:settings:)
+            // will set processingFormat to Float32, but we bypass that by opening the file with
+            // the int16Format directly so write(from:) receives a matching-format buffer and
+            // performs no hidden conversion.
+            // Use a fresh AVAudioFile scoped to this iteration so the WAV header is finalised
+            // (file handle closed) before whisper-cli opens the file.
+            do {
+                let outputFile = try AVAudioFile(
+                    forWriting: chunkURL,
+                    settings: int16Format.settings,
+                    commonFormat: .pcmFormatInt16,
+                    interleaved: true
+                )
+                try outputFile.write(from: int16Buffer)
+                // outputFile goes out of scope here; ARC closes and flushes it synchronously.
+            }
 
             chunks.append(ChunkInfo(
                 url: chunkURL,
