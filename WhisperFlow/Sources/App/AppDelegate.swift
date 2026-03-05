@@ -1,11 +1,11 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
     private var hotkeyManager: HotkeyManager?
     private var audioRecorder: AudioRecorder?
-    private var transcriptionEngine: TranscriptionEngine?
     private var pillWindowController: PillWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -33,8 +33,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         audioRecorder = AudioRecorder(pathManager: pathManager, logger: logger)
         appState.audioRecorder = audioRecorder
 
-        // Initialize transcription engine
-        transcriptionEngine = TranscriptionEngine(pathManager: pathManager, logger: logger)
+        // Initialize transcription engine (local whisper-cli)
+        let transcriptionEngine = TranscriptionEngine(pathManager: pathManager, logger: logger)
         appState.transcriptionEngine = transcriptionEngine
 
         // Initialize hotkey manager
@@ -66,6 +66,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.selectedModelProfile = prefs.modelProfile
         appState.selectedLanguage = prefs.language
         appState.formattingEnabled = prefs.formattingEnabled
+
+        // Sync launch-at-login: re-register with SMAppService if the user
+        // previously enabled it but the registration was lost (e.g. after
+        // rebuild, app relocation, or macOS update).
+        syncLaunchAtLogin(prefs: prefs, preferencesManager: preferencesManager, logger: logger)
 
         // Check model availability
         let modelManager = ModelManager(pathManager: pathManager, logger: logger)
@@ -119,24 +124,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         pillWindowController?.showPill()
 
-        recorder.startRecording { [weak self] duration in
+        recorder.audioLevelCallback = { [weak self] level in
             DispatchQueue.main.async {
-                self?.appState.recordingDuration = duration
-                // 9:30 warning
-                if duration >= 570 && duration < 571 {
-                    self?.appState.showTimeWarning = true
-                }
-                // 10 minute hard cap
-                if duration >= 600 {
-                    self?.stopRecordingAndTranscribe()
-                }
+                self?.appState.audioLevel = level
             }
         }
+
+        recorder.startRecording(
+            durationUpdate: { [weak self] duration in
+                DispatchQueue.main.async {
+                    self?.appState.recordingDuration = duration
+                    // 9:30 warning
+                    if duration >= 570 && duration < 571 {
+                        self?.appState.showTimeWarning = true
+                    }
+                    // 10 minute hard cap
+                    if duration >= 600 {
+                        self?.stopRecordingAndTranscribe()
+                    }
+                }
+            },
+            onError: { [weak self] message in
+                guard let self = self else { return }
+                if message.contains("Microphone access denied") {
+                    self.returnToIdle()
+                    self.promptMicrophonePermission()
+                } else {
+                    self.appState.currentState = .error(message)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                        self.returnToIdle()
+                    }
+                }
+            }
+        )
     }
 
     private func stopRecordingAndTranscribe() {
         guard appState.currentState == .recording else { return }
-        guard let recorder = audioRecorder, let engine = transcriptionEngine else { return }
+        guard let recorder = audioRecorder, let engine = appState.transcriptionEngine else { return }
 
         appState.logger?.log("Recording stopped, starting transcription")
 
@@ -225,7 +250,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .recording:
             audioRecorder?.cancelRecording()
         case .transcribing:
-            transcriptionEngine?.cancel()
+            appState.transcriptionEngine?.cancel()
         default:
             break
         }
@@ -233,27 +258,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         returnToIdle()
     }
 
-    /// Simulate ⌘V to paste the clipboard into whatever text field is focused.
-    /// Requires Accessibility permissions (macOS will prompt on first use).
-    private func simulatePaste() {
-        // Small delay to ensure the pasteboard is ready and the app regains focus
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            let src = CGEventSource(stateID: .combinedSessionState)
+    private func promptMicrophonePermission() {
+        let alert = NSAlert()
+        alert.messageText = "Microphone Access Required"
+        alert.informativeText = "Fluister needs microphone access to record your voice. Please enable it in System Settings."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        }
+    }
 
-            // Key code 9 = "V" on all keyboard layouts
+    /// Simulate ⌘V to paste the clipboard into whatever text field is focused.
+    ///
+    /// Uses CGEvent with `.cgSessionEventTap` to inject into the active user-session
+    /// event stream. Requires Accessibility permission, which is now tracked by the
+    /// stable "Fluister Dev Signing" certificate identity — so the grant persists
+    /// across rebuilds and never needs to be re-granted.
+    private func simulatePaste() {
+        let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
+        guard AXIsProcessTrustedWithOptions(options as CFDictionary) else {
+            appState.logger?.log("Auto-paste skipped: Accessibility not granted (prompted user)")
+            return
+        }
+
+        // 100ms delay lets the pasteboard write propagate before the keypress fires.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let src = CGEventSource(stateID: .combinedSessionState)
             guard let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true),
-                  let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false) else {
+                  let keyUp   = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false) else {
                 self.appState.logger?.log("WARNING: Failed to create CGEvent for paste")
                 return
             }
-
             keyDown.flags = .maskCommand
-            keyUp.flags = .maskCommand
-
-            keyDown.post(tap: .cghidEventTap)
-            keyUp.post(tap: .cghidEventTap)
-
-            self.appState.logger?.log("Auto-pasted via ⌘V")
+            keyUp.flags   = .maskCommand
+            keyDown.post(tap: .cgSessionEventTap)
+            keyUp.post(tap: .cgSessionEventTap)
+            self.appState.logger?.log("Auto-pasted via ⌘V (cgSessionEventTap)")
         }
     }
 
@@ -261,7 +303,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func returnToIdle() {
         appState.currentState = .idle
         appState.showTimeWarning = false
+        appState.audioLevel = 0
         pillWindowController?.hidePill()
         hotkeyManager?.unregisterEscapeKey()
+    }
+
+    /// Ensure SMAppService registration matches the user's saved preference.
+    /// SMAppService registrations can be lost after a rebuild, app relocation,
+    /// or macOS update — this re-registers when needed.
+    private func syncLaunchAtLogin(prefs: Preferences, preferencesManager: PreferencesManager, logger: AppLogger) {
+        let systemEnabled = SMAppService.mainApp.status == .enabled
+        let userWants = prefs.launchAtLogin
+
+        if userWants && !systemEnabled {
+            do {
+                try SMAppService.mainApp.register()
+                logger.log("Re-registered launch-at-login (was lost)")
+            } catch {
+                logger.log("Failed to re-register launch-at-login: \(error)")
+            }
+        } else if !userWants && systemEnabled {
+            do {
+                try SMAppService.mainApp.unregister()
+                logger.log("Unregistered launch-at-login (pref was disabled)")
+            } catch {
+                logger.log("Failed to unregister launch-at-login: \(error)")
+            }
+        }
+
+        appState.launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 }

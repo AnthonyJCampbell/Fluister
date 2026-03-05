@@ -32,10 +32,12 @@ class AppState: ObservableObject {
     @Published var showTimeWarning: Bool = false
     @Published var downloadProgress: Double = 0
     @Published var isDownloading: Bool = false
+    @Published var downloadingProfile: ModelProfile? = nil
     @Published var selectedModelProfile: ModelProfile = Preferences.defaults.modelProfile
     @Published var selectedLanguage: Language = Preferences.defaults.language
     @Published var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @Published var formattingEnabled: Bool = Preferences.defaults.formattingEnabled
+    @Published var audioLevel: Float = 0
     @Published var clipboardHistory: [ClipboardEntry] = []
 
     var pathManager: PathManager?

@@ -1,8 +1,23 @@
 import Foundation
 
-enum ModelProfile: String, Codable {
-    case fast
-    case balanced
+enum ModelProfile: String, Codable, CaseIterable {
+    case tiny
+    case base
+    case small
+    case medium
+    case large
+    case turbo
+
+    var displayName: String {
+        switch self {
+        case .tiny:   return "Tiny"
+        case .base:   return "Base"
+        case .small:  return "Small"
+        case .medium: return "Medium"
+        case .large:  return "Large"
+        case .turbo:  return "Turbo"
+        }
+    }
 }
 
 enum Language: String, Codable {
@@ -26,7 +41,7 @@ struct Preferences: Codable {
 
     static let defaults = Preferences(
         hotkey: "Control+Space",
-        modelProfile: .fast,
+        modelProfile: .turbo,
         language: .english,
         launchAtLogin: false,
         uiPosition: .cursor,
@@ -42,8 +57,7 @@ struct Preferences: Codable {
         case formattingEnabled = "formatting_enabled"
     }
 
-    init(hotkey: String, modelProfile: ModelProfile, language: Language,
-         launchAtLogin: Bool, uiPosition: UIPosition, formattingEnabled: Bool = true) {
+    init(hotkey: String, modelProfile: ModelProfile, language: Language, launchAtLogin: Bool, uiPosition: UIPosition, formattingEnabled: Bool) {
         self.hotkey = hotkey
         self.modelProfile = modelProfile
         self.language = language
@@ -55,7 +69,7 @@ struct Preferences: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hotkey = try container.decode(String.self, forKey: .hotkey)
-        modelProfile = try container.decode(ModelProfile.self, forKey: .modelProfile)
+        modelProfile = try container.decodeIfPresent(ModelProfile.self, forKey: .modelProfile) ?? .turbo
         language = try container.decode(Language.self, forKey: .language)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         uiPosition = try container.decode(UIPosition.self, forKey: .uiPosition)

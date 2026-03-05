@@ -6,34 +6,26 @@ struct MenuBarView: View {
 
     var body: some View {
         Group {
-            if !appState.modelAvailable {
-                Button("Download Model (Recommended)") {
-                    downloadModel()
-                }
-            }
-
-            if appState.isDownloading {
-                Text("Downloading: \(Int(appState.downloadProgress * 100))%")
-                Button("Cancel Download") {
-                    appState.modelManager?.cancelDownload()
-                    appState.isDownloading = false
-                    appState.downloadProgress = 0
-                }
-            }
-
             Divider()
 
-            // Model profile submenu — uses @Published for reactive checkmarks
+            // Model submenu
             Menu("Model") {
-                Button(appState.selectedModelProfile == .fast ? "✓ Fast (Small)" : "  Fast (Small)") {
-                    setModelProfile(.fast)
+                ForEach(ModelProfile.allCases, id: \.self) { profile in
+                    Button(modelMenuLabel(for: profile)) {
+                        selectOrDownloadModel(profile)
+                    }
                 }
-                Button(appState.selectedModelProfile == .balanced ? "✓ Balanced (Medium)" : "  Balanced (Medium)") {
-                    setModelProfile(.balanced)
+                if appState.isDownloading {
+                    Button("  Cancel Download") {
+                        appState.modelManager?.cancelDownload()
+                        appState.isDownloading = false
+                        appState.downloadingProfile = nil
+                        appState.downloadProgress = 0
+                    }
                 }
             }
 
-            // Language submenu — uses @Published for reactive checkmarks
+            // Language submenu
             Menu("Language") {
                 Button(appState.selectedLanguage == .english ? "✓ English" : "  English") {
                     setLanguage(.english)
@@ -99,24 +91,55 @@ struct MenuBarView: View {
         }
     }
 
-    private func downloadModel() {
+    private func modelMenuLabel(for profile: ModelProfile) -> String {
+        let isSelected = appState.selectedModelProfile == profile
+        let check = isSelected ? "✓" : " "
+        let name = profile.displayName
+
+        if appState.downloadingProfile == profile {
+            return "\(check) \(name)  ↓"
+        }
+
+        let isDownloaded = appState.modelManager?.isModelAvailable(profile: profile) ?? false
+        if isDownloaded {
+            return "\(check) \(name)"
+        } else {
+            let size = ModelSources.source(for: profile).sizeDescription
+            return "\(check) \(name)  ⬇ \(size)"
+        }
+    }
+
+    private func selectOrDownloadModel(_ profile: ModelProfile) {
+        let isDownloaded = appState.modelManager?.isModelAvailable(profile: profile) ?? false
+        setModelProfile(profile)
+        if !isDownloaded {
+            downloadModel(profile: profile)
+        }
+    }
+
+    private func downloadModel(profile: ModelProfile) {
         guard let modelManager = appState.modelManager else { return }
 
+        // Cancel any in-progress download first
+        if appState.isDownloading {
+            modelManager.cancelDownload()
+        }
+
         appState.isDownloading = true
+        appState.downloadingProfile = profile
         appState.downloadProgress = 0
 
-        modelManager.downloadModel(profile: appState.selectedModelProfile) { progress in
-            DispatchQueue.main.async {
-                self.appState.downloadProgress = progress
-            }
+        modelManager.downloadModel(profile: profile) { _ in
+            // Progress not displayed in menu
         } completion: { result in
             DispatchQueue.main.async {
                 self.appState.isDownloading = false
+                self.appState.downloadingProfile = nil
                 self.appState.downloadProgress = 0
                 switch result {
                 case .success:
                     self.appState.modelAvailable = true
-                    self.appState.logger?.log("Model download completed successfully")
+                    self.appState.logger?.log("Model download completed: \(profile.rawValue)")
                 case .failure(let error):
                     self.appState.logger?.log("Model download failed: \(error)")
                 }
@@ -154,6 +177,11 @@ struct MenuBarView: View {
                 try SMAppService.mainApp.register()
             }
             appState.launchAtLogin = SMAppService.mainApp.status == .enabled
+
+            if var prefs = appState.preferencesManager?.load() {
+                prefs.launchAtLogin = appState.launchAtLogin
+                appState.preferencesManager?.save(prefs)
+            }
         } catch {
             appState.logger?.log("Failed to toggle launch at login: \(error)")
         }

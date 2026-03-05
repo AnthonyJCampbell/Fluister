@@ -6,13 +6,19 @@ class PathManager {
     private let repoRoot: URL
 
     init() {
-        // Determine repo root from bundle location or env var
+        // Priority 1: env var (direct binary launch)
         if let envRoot = ProcessInfo.processInfo.environment["WHISPERFLOW_REPO_ROOT"] {
             self.repoRoot = URL(fileURLWithPath: envRoot)
             self.isDevMode = ProcessInfo.processInfo.environment["WHISPERFLOW_DEV_MODE"] == "1"
-        } else {
-            // App is at <repo>/build/Build/Products/Debug/WhisperFlow.app
-            // Walk up from the bundle path looking for a parent that contains vendor/
+        }
+        // Priority 2: UserDefaults written by ./dev before `open -n` launch
+        else if let storedRoot = UserDefaults(suiteName: "com.fluister.dev")?.string(forKey: "RepoRoot"),
+                !storedRoot.isEmpty {
+            self.repoRoot = URL(fileURLWithPath: storedRoot)
+            self.isDevMode = true
+        }
+        // Priority 3: walk up from bundle (works when running inside repo checkout)
+        else {
             let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath)
             let resolved = PathManager.findRepoRoot(from: bundleURL)
             self.repoRoot = resolved.root
