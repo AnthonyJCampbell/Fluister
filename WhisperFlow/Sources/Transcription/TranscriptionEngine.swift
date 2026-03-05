@@ -137,24 +137,20 @@ class TranscriptionEngine {
         let process = Process()
         process.executableURL = pathManager.whisperCliBinary
 
-        // Set working directory to whisper.cpp dir so Metal shader (ggml-metal.metal) can be found
-        let whisperDir = pathManager.whisperCliBinary
-            .deletingLastPathComponent() // bin/
-            .deletingLastPathComponent() // build/
-            .deletingLastPathComponent() // whisper.cpp/
-        process.currentDirectoryURL = whisperDir
+        // Point to the directory containing default.metallib (pre-compiled Metal shader).
+        // This is build/bin/ — the same directory as whisper-cli itself.
+        let binDir = pathManager.whisperCliBinary.deletingLastPathComponent()
+        process.currentDirectoryURL = binDir
 
-        // Tell ggml-metal where to find the .metal shader and its #include'd headers.
-        // Both ggml-metal.metal and ggml-common.h live in the whisper.cpp root.
-        // Without this, Metal compilation fails with "ggml-common.h not found".
         var env = ProcessInfo.processInfo.environment
-        env["GGML_METAL_PATH_RESOURCES"] = whisperDir.path
+        env["GGML_METAL_PATH_RESOURCES"] = binDir.path
         process.environment = env
 
         var args = [
             "-m", modelPath.path,
             "-f", wavPath.path,
-            "--no-timestamps"
+            "--no-timestamps",
+            "--no-prints"      // Suppress diagnostic output to stderr for faster I/O
         ]
 
         if language != .auto {
@@ -248,13 +244,13 @@ class TranscriptionEngine {
 
         let rawOutput = String(data: stdoutData, encoding: .utf8) ?? ""
 
-        // Log stderr for diagnostics (Metal status, warnings, etc.)
+        // Log stderr for diagnostics — --no-prints suppresses most output, but errors still appear.
         let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
-        if stderrStr.contains("metal") || stderrStr.contains("Metal") {
+        if !stderrStr.isEmpty {
             if stderrStr.contains("failed") || stderrStr.contains("error") {
-                logger?.log("WARNING: Metal GPU acceleration failed — using CPU fallback")
-            } else {
-                logger?.log("Metal GPU acceleration active")
+                if stderrStr.contains("metal") || stderrStr.contains("Metal") {
+                    logger?.log("WARNING: Metal GPU acceleration failed — using CPU fallback")
+                }
             }
         }
 
