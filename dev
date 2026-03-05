@@ -1,0 +1,34 @@
+#!/bin/zsh
+# Build, kill old instance, and relaunch Fluister in dev mode.
+# Run from the repo root: ./dev
+
+set -e
+
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+echo "Building..."
+xcodebuild -project Fluister.xcodeproj -scheme Fluister -configuration Debug build 2>&1 \
+  | grep -E "(error:|BUILD |warning: )" \
+  | grep -v "warning: "
+
+APP=$(find ~/Library/Developer/Xcode/DerivedData -name "Fluister.app" -path "*/Debug/*" 2>/dev/null | head -1)
+if [[ -z "$APP" ]]; then
+  echo "ERROR: Could not find built app in DerivedData"
+  exit 1
+fi
+
+# Write dev config to UserDefaults so the app can find the repo root when
+# launched via `open`. env vars can't be passed through `open`, but
+# UserDefaults persists and is read by PathManager on startup.
+defaults write com.fluister.dev RepoRoot "$REPO_ROOT"
+defaults write com.fluister.dev DevMode -bool YES
+
+echo "Stopping existing instance..."
+kill $(pgrep -x Fluister) 2>/dev/null; sleep 1
+
+# Launch as a proper app bundle via `open -n` so macOS TCC associates
+# microphone/accessibility permissions with Fluister.app (not the shell).
+echo "Launching $APP"
+open -n -g "$APP"
+
+echo "Done — Fluister launched in dev mode"

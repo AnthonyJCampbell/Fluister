@@ -18,6 +18,13 @@ vendor/whisper.cpp/build/
 # Model files (large, downloaded at runtime)
 *.bin
 
+# Profiling
+*.profraw
+
+# Temp vendor copies
+vendor/whisper.cpp.new/
+vendor/whisper.cpp.bak/
+
 # macOS
 .DS_Store
 *.swp
