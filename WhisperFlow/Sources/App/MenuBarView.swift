@@ -38,6 +38,16 @@ struct MenuBarView: View {
                 }
             }
 
+            // Speed mode submenu
+            Menu("Speed") {
+                Button(appState.speedMode == .fast ? "✓ Fast" : "  Fast") {
+                    setSpeedMode(.fast)
+                }
+                Button(appState.speedMode == .accurate ? "✓ Accurate" : "  Accurate") {
+                    setSpeedMode(.accurate)
+                }
+            }
+
             Text("Hotkey: \(appState.preferencesManager?.load().hotkey ?? Preferences.defaults.hotkey)")
                 .foregroundColor(.secondary)
 
@@ -160,6 +170,13 @@ struct MenuBarView: View {
         prefs.language = language
         appState.preferencesManager?.save(prefs)
         appState.selectedLanguage = language
+    }
+
+    private func setSpeedMode(_ mode: SpeedMode) {
+        var prefs = appState.preferencesManager?.load() ?? Preferences.defaults
+        prefs.speedMode = mode
+        appState.preferencesManager?.save(prefs)
+        appState.speedMode = mode
     }
 
     private func toggleFormatting() {

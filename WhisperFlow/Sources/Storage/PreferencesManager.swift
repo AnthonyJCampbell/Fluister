@@ -31,6 +31,32 @@ enum UIPosition: String, Codable {
     case menuBar = "menu_bar"
 }
 
+enum SpeedMode: String, Codable {
+    case fast
+    case accurate
+
+    var displayName: String {
+        switch self {
+        case .fast:     return "Fast"
+        case .accurate: return "Accurate"
+        }
+    }
+
+    var beamSize: Int {
+        switch self {
+        case .fast:     return 2
+        case .accurate: return 5
+        }
+    }
+
+    var bestOf: Int {
+        switch self {
+        case .fast:     return 2
+        case .accurate: return 5
+        }
+    }
+}
+
 struct Preferences: Codable {
     var hotkey: String
     var modelProfile: ModelProfile
@@ -38,6 +64,7 @@ struct Preferences: Codable {
     var launchAtLogin: Bool
     var uiPosition: UIPosition
     var formattingEnabled: Bool
+    var speedMode: SpeedMode
 
     static let defaults = Preferences(
         hotkey: "Control+Space",
@@ -45,7 +72,8 @@ struct Preferences: Codable {
         language: .english,
         launchAtLogin: false,
         uiPosition: .cursor,
-        formattingEnabled: true
+        formattingEnabled: true,
+        speedMode: .fast
     )
 
     enum CodingKeys: String, CodingKey {
@@ -55,15 +83,17 @@ struct Preferences: Codable {
         case launchAtLogin = "launch_at_login"
         case uiPosition = "ui_position"
         case formattingEnabled = "formatting_enabled"
+        case speedMode = "speed_mode"
     }
 
-    init(hotkey: String, modelProfile: ModelProfile, language: Language, launchAtLogin: Bool, uiPosition: UIPosition, formattingEnabled: Bool) {
+    init(hotkey: String, modelProfile: ModelProfile, language: Language, launchAtLogin: Bool, uiPosition: UIPosition, formattingEnabled: Bool, speedMode: SpeedMode = .fast) {
         self.hotkey = hotkey
         self.modelProfile = modelProfile
         self.language = language
         self.launchAtLogin = launchAtLogin
         self.uiPosition = uiPosition
         self.formattingEnabled = formattingEnabled
+        self.speedMode = speedMode
     }
 
     init(from decoder: Decoder) throws {
@@ -74,6 +104,7 @@ struct Preferences: Codable {
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         uiPosition = try container.decode(UIPosition.self, forKey: .uiPosition)
         formattingEnabled = try container.decodeIfPresent(Bool.self, forKey: .formattingEnabled) ?? true
+        speedMode = try container.decodeIfPresent(SpeedMode.self, forKey: .speedMode) ?? .fast
     }
 }
 

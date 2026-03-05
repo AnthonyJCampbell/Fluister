@@ -36,10 +36,17 @@ class TranscriptionEngine {
         self.logger = logger
     }
 
+    /// Optimal thread count: use performance cores, leave 2 free for UI/system.
+    private static let optimalThreads: Int = {
+        let count = ProcessInfo.processInfo.processorCount
+        return max(1, min(8, count - 2))
+    }()
+
     func transcribe(
         wavPath: URL,
         language: Language,
         modelProfile: ModelProfile,
+        speedMode: SpeedMode = .fast,
         progressCallback: @escaping (Int, Int) -> Void,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
@@ -90,6 +97,7 @@ class TranscriptionEngine {
                             wavPath: chunk.url,
                             modelPath: modelPath,
                             language: language,
+                            speedMode: speedMode,
                             timeout: self.perChunkTimeout
                         )
                         transcripts.append(text)
@@ -109,6 +117,7 @@ class TranscriptionEngine {
                         wavPath: wavPath,
                         modelPath: modelPath,
                         language: language,
+                        speedMode: speedMode,
                         timeout: self.perChunkTimeout
                     )
                     completion(.success(text))
@@ -131,7 +140,7 @@ class TranscriptionEngine {
 
     // MARK: - Private
 
-    private func runWhisperCli(wavPath: URL, modelPath: URL, language: Language, timeout: TimeInterval) throws -> String {
+    private func runWhisperCli(wavPath: URL, modelPath: URL, language: Language, speedMode: SpeedMode, timeout: TimeInterval) throws -> String {
         guard !isCancelled else { throw TranscriptionError.cancelled }
 
         let process = Process()
@@ -150,7 +159,10 @@ class TranscriptionEngine {
             "-m", modelPath.path,
             "-f", wavPath.path,
             "--no-timestamps",
-            "--no-prints"      // Suppress diagnostic output to stderr for faster I/O
+            "--no-prints",      // Suppress diagnostic output to stderr for faster I/O
+            "-t", String(TranscriptionEngine.optimalThreads),
+            "-bs", String(speedMode.beamSize),
+            "-bo", String(speedMode.bestOf)
         ]
 
         if language != .auto {

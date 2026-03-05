@@ -66,6 +66,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.selectedModelProfile = prefs.modelProfile
         appState.selectedLanguage = prefs.language
         appState.formattingEnabled = prefs.formattingEnabled
+        appState.speedMode = prefs.speedMode
 
         // Sync launch-at-login: re-register with SMAppService if the user
         // previously enabled it but the registration was lost (e.g. after
@@ -182,6 +183,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     wavPath: wavPath,
                     language: prefs.language,
                     modelProfile: prefs.modelProfile,
+                    speedMode: prefs.speedMode,
                     progressCallback: { current, total in
                         DispatchQueue.main.async {
                             self.appState.currentChunk = current
