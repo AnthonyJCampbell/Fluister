@@ -53,19 +53,29 @@ scripts/build_whisper.sh
 | Cancel | Press **Escape** while recording or transcribing |
 | Change language | Menu bar icon > Language > English / Dutch / Auto |
 | Change model | Menu bar icon > Model > select a model |
+| Change speed | Menu bar icon > Speed > Fast / Accurate |
 | Toggle formatting | Menu bar icon > Settings > Text Formatting |
 | View logs | Menu bar icon > Settings > Open Logs |
 
+### Speed Modes
+
+| Mode | Beam Size | Best Of | Notes |
+|---|---|---|---|
+| **Fast** | 2 | 2 | **Default** — ~40% faster decoding, catches obvious errors |
+| Accurate | 5 | 5 | Full quality, slower |
+
 ### Models
+
+All models use q5 quantized variants for faster inference and smaller downloads.
 
 | Profile | Model | Size | Notes |
 |---|---|---|---|
-| Tiny | `ggml-tiny.bin` | 75 MB | Fastest, least accurate |
-| Base | `ggml-base.bin` | 142 MB | Good for short dictation |
-| Small | `ggml-small.bin` | 466 MB | Better multilingual support |
-| Medium | `ggml-medium.bin` | 1.5 GB | High accuracy |
-| Large | `ggml-large-v3.bin` | 3.1 GB | Highest accuracy |
-| **Turbo** | `ggml-large-v3-turbo.bin` | **1.6 GB** | **Default** — best speed/accuracy balance |
+| Tiny | `ggml-tiny-q5_1.bin` | 32 MB | Fastest, least accurate |
+| Base | `ggml-base-q5_1.bin` | 60 MB | Good for short dictation |
+| Small | `ggml-small-q5_1.bin` | 190 MB | Better multilingual support |
+| Medium | `ggml-medium-q5_0.bin` | 539 MB | High accuracy |
+| Large | `ggml-large-v3-q5_0.bin` | 1.1 GB | Highest accuracy |
+| **Turbo** | `ggml-large-v3-turbo-q5_0.bin` | **574 MB** | **Default** — best speed/accuracy balance |
 
 Models are downloaded from [HuggingFace](https://huggingface.co/ggerganov/whisper.cpp) on first use. After download, the app works entirely offline.
 
@@ -161,8 +171,8 @@ Fluister/
 Download a model via the menu bar icon > Model, or manually:
 ```bash
 mkdir -p .local/models
-curl -L -o .local/models/ggml-large-v3-turbo.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+curl -L -o .local/models/ggml-large-v3-turbo-q5_0.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
 ```
 
 ### Microphone permission denied
