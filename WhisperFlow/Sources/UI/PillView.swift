@@ -29,6 +29,7 @@ struct PillView: View {
             RoundedRectangle(cornerRadius: 25)
                 .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 25))
     }
 
     private var recordingView: some View {
@@ -42,7 +43,7 @@ struct PillView: View {
                 .onDisappear { pulseAnimation = false }
 
             WaveformView()
-                .frame(width: 40, height: 20)
+                .frame(width: 84, height: 20)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Recording…")

@@ -48,7 +48,7 @@ class PillWindowController {
     private func createPanel() {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 220, height: 60),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -57,13 +57,15 @@ class PillWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.becomesKeyOnlyIfNeeded = true
 
         let hostingView = NSHostingView(rootView: PillView().environmentObject(appState))
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = .clear
         panel.contentView = hostingView
 
         self.panel = panel

@@ -1,23 +1,37 @@
 import SwiftUI
 
 struct WaveformView: View {
-    @State private var barHeights: [CGFloat] = Array(repeating: 0.3, count: 5)
+    @EnvironmentObject var appState: AppState
 
-    let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
+    private let barCount = 24
+    /// Rolling buffer of audio levels — each new sample shifts bars left, newest on the right.
+    @State private var levels: [CGFloat] = Array(repeating: 0.05, count: 24)
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<5, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(.red.opacity(0.8))
-                    .frame(width: 3, height: barHeights[index] * 20)
-                    .animation(.easeInOut(duration: 0.15), value: barHeights[index])
+        HStack(spacing: 1.5) {
+            ForEach(0..<barCount, id: \.self) { index in
+                Capsule()
+                    .fill(barGradient)
+                    .frame(width: 2, height: barHeight(for: index))
+                    .animation(.easeOut(duration: 0.08), value: levels[index])
             }
         }
-        .onReceive(timer) { _ in
-            for i in 0..<5 {
-                barHeights[i] = CGFloat.random(in: 0.2...1.0)
-            }
+        .onChange(of: appState.audioLevel) { newLevel in
+            // Shift all bars left and push new level on the right — creates a scrolling waveform
+            var updated = Array(levels.dropFirst())
+            updated.append(CGFloat(max(0.05, min(1.0, newLevel))))
+            levels = updated
         }
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        let maxHeight: CGFloat = 20
+        let minHeight: CGFloat = 2
+        let level = levels[index]
+        return minHeight + level * (maxHeight - minHeight)
+    }
+
+    private var barGradient: some ShapeStyle {
+        Color.red.opacity(0.85)
     }
 }
